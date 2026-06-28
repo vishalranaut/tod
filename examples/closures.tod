@@ -1,0 +1,45 @@
+// Closures and higher-order functions in TOD
+
+// A counter factory using closures
+fn makeCounter(start) {
+  let count = start;
+  return fn() {
+    count = count + 1;
+    return count;
+  };
+}
+
+let counter1 = makeCounter(0);
+let counter2 = makeCounter(100);
+
+log("Counter 1: " + counter1() + ", " + counter1() + ", " + counter1());
+log("Counter 2: " + counter2() + ", " + counter2() + ", " + counter2());
+
+// Higher-order function: apply a function n times
+fn repeat(f, n) {
+  let i = 0;
+  while (i < n) {
+    f(i);
+    i = i + 1;
+  }
+}
+
+repeat(fn(i) {
+  log("  iteration " + i);
+}, 5);
+
+// Function composition
+fn compose(f, g) {
+  return fn(x) {
+    return f(g(x));
+  };
+}
+
+fn double(x) { return x * 2; }
+fn addOne(x) { return x + 1; }
+
+let doubleAndAdd = compose(addOne, double);
+log("doubleAndAdd(5) = " + doubleAndAdd(5));
+
+let addAndDouble = compose(double, addOne);
+log("addAndDouble(5) = " + addAndDouble(5));

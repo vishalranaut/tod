@@ -1,0 +1,19 @@
+// JSON and data processing in TOD
+
+let data = json.parse("[{\"name\": \"Alice\", \"age\": 30}, {\"name\": \"Bob\", \"age\": 25}, {\"name\": \"Charlie\", \"age\": 35}]");
+
+log("People:");
+let i = 0;
+while (i < len(data)) {
+  let person = data[i];
+  log("  " + person.name + " (age " + person.age + ")");
+  i = i + 1;
+}
+
+// Build a simple config object
+let config = json.parse("{\"host\": \"localhost\", \"port\": 3000, \"debug\": true}");
+log("");
+log("Config: " + json.stringify(config));
+log("  Host: " + config.host);
+log("  Port: " + config.port);
+log("  Debug: " + config.debug);

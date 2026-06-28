@@ -1,0 +1,31 @@
+// Fibonacci in TOD — recursive and iterative
+
+fn fib_recursive(n) {
+  if (n <= 1) { return n; }
+  return fib_recursive(n - 1) + fib_recursive(n - 2);
+}
+
+fn fib_iterative(n) {
+  let a = 0;
+  let b = 1;
+  let i = 0;
+  while (i < n) {
+    let temp = b;
+    b = a + b;
+    a = temp;
+    i = i + 1;
+  }
+  return a;
+}
+
+log("Recursive fibonacci:");
+let i = 0;
+while (i <= 10) {
+  log("  fib(" + i + ") = " + fib_recursive(i));
+  i = i + 1;
+}
+
+log("");
+log("Iterative fibonacci:");
+log("  fib(30) = " + fib_iterative(30));
+log("  fib(40) = " + fib_iterative(40));
