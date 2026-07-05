@@ -1,6 +1,6 @@
 {
   "name": "todlang",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "TOD — a tiny backend scripting language. Install globally to use 'tod' as a command.",
   "type": "module",
   "main": "./dist/index.js",
