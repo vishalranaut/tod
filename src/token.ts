@@ -21,6 +21,14 @@ export enum TokenType {
   BREAK = "BREAK",
   CONTINUE = "CONTINUE",
 
+  // OOP
+  CLASS = "CLASS",
+  THIS = "THIS",
+  NEW = "NEW",
+  EXTENDS = "EXTENDS",
+  SUPER = "SUPER",
+  INSTANCEOF = "INSTANCEOF",
+
   // Operators
   PLUS = "PLUS",
   MINUS = "MINUS",
@@ -90,6 +98,12 @@ export const KEYWORDS: ReadonlyMap<string, TokenType> = new Map([
   ["for", TokenType.FOR],
   ["break", TokenType.BREAK],
   ["continue", TokenType.CONTINUE],
+  ["class", TokenType.CLASS],
+  ["this", TokenType.THIS],
+  ["new", TokenType.NEW],
+  ["extends", TokenType.EXTENDS],
+  ["super", TokenType.SUPER],
+  ["instanceof", TokenType.INSTANCEOF],
   ["true", TokenType.TRUE],
   ["false", TokenType.FALSE],
   ["null", TokenType.NULL],

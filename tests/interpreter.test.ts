@@ -565,6 +565,149 @@ describe("Interpreter", () => {
     });
   });
 
+  describe("object-oriented programming (classes)", () => {
+    it("should instantiate classes and set properties", () => {
+      const source = `
+        class Point {
+          constructor(x, y) {
+            this.x = x;
+            this.y = y;
+          }
+        }
+        let p = new Point(10, 20);
+        log(p.x, p.y);
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["10 20"]);
+    });
+
+    it("should call methods with correct 'this' binding", () => {
+      const source = `
+        class Counter {
+          constructor() {
+            this.count = 0;
+          }
+          inc() {
+            this.count++;
+          }
+          get() {
+            return this.count;
+          }
+        }
+        let c = new Counter();
+        c.inc();
+        c.inc();
+        log(c.get());
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["2"]);
+    });
+
+    it("should support methods with arguments", () => {
+      const source = `
+        class MathUtils {
+          add(a, b) {
+            return a + b;
+          }
+        }
+        let m = new MathUtils();
+        log(m.add(5, 7));
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["12"]);
+    });
+
+    it("should support inheritance and super calls", () => {
+      const source = `
+        class Animal {
+          constructor(name) {
+            this.name = name;
+          }
+          speak() {
+            log(this.name + " makes a noise.");
+          }
+        }
+        class Dog extends Animal {
+          constructor(name, breed) {
+            super(name);
+            this.breed = breed;
+          }
+          speak() {
+            log(this.name + " barks.");
+          }
+          parentSpeak() {
+            super.speak();
+          }
+        }
+        let d = new Dog("Rex", "German Shepherd");
+        log(d.name, d.breed);
+        d.speak();
+        d.parentSpeak();
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual([
+        "Rex German Shepherd",
+        "Rex barks.",
+        "Rex makes a noise."
+      ]);
+    });
+
+    it("should support instanceof", () => {
+      const source = `
+        class A {}
+        class B extends A {}
+        class C {}
+        let b = new B();
+        log(b instanceof B);
+        log(b instanceof A);
+        log(b instanceof C);
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["true", "true", "false"]);
+    });
+    it("should support static methods", () => {
+      const source = `
+        class Math {
+          static add(a, b) { return a + b; }
+        }
+        log(Math.add(5, 7));
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["12"]);
+    });
+
+    it("should support getters and setters", () => {
+      const source = `
+        class Person {
+          constructor(first, last) {
+            this.first = first;
+            this.last = last;
+          }
+          get fullName() {
+            return this.first + " " + this.last;
+          }
+          set fullName(name) {
+            this.first = name;
+            this.last = "";
+          }
+        }
+        let p = new Person("John", "Doe");
+        log(p.fullName);
+        p.fullName = "Jane";
+        log(p.first);
+      `;
+      const interpreter = new Interpreter();
+      interpreter.interpret(new Parser(new Lexer(source).tokenize()).parse());
+      expect(interpreter.getOutput()).toEqual(["John Doe", "Jane"]);
+    });
+  });
+
   describe("complex programs", () => {
     it("should run FizzBuzz", () => {
       const output = getOutput(`

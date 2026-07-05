@@ -40,6 +40,28 @@ export interface TodArray {
 }
 
 /**
+ * A user-defined class.
+ */
+export interface TodClass {
+  type: "class";
+  name: string;
+  parent?: TodClass;
+  methods: Map<string, TodFunction>;
+  staticMethods: Map<string, TodFunction>;
+  getters: Map<string, TodFunction>;
+  setters: Map<string, TodFunction>;
+}
+
+/**
+ * An instance of a user-defined class.
+ */
+export interface TodInstance {
+  type: "instance";
+  todClass: TodClass;
+  fields: Map<string, TodValue>;
+}
+
+/**
  * Union of all possible runtime values in TOD.
  */
 export type TodValue =
@@ -50,7 +72,9 @@ export type TodValue =
   | TodFunction
   | TodBuiltin
   | TodObject
-  | TodArray;
+  | TodArray
+  | TodClass
+  | TodInstance;
 
 // ─── Value Utilities ─────────────────────────────────────────────────────────
 
@@ -98,6 +122,8 @@ export function todTypeof(value: TodValue): string {
     if (value.type === "builtin") return "function";
     if (value.type === "object") return "object";
     if (value.type === "array") return "array";
+    if (value.type === "class") return "class";
+    if (value.type === "instance") return value.todClass.name;
   }
   return "unknown";
 }
@@ -123,6 +149,14 @@ export function todStringify(value: TodValue): string {
         entries.push(`${k}: ${todStringify(v)}`);
       }
       return `{ ${entries.join(", ")} }`;
+    }
+    if (value.type === "class") return `<class ${value.name}>`;
+    if (value.type === "instance") {
+      const entries: string[] = [];
+      for (const [k, v] of value.fields) {
+        entries.push(`${k}: ${todStringify(v)}`);
+      }
+      return `${value.todClass.name} { ${entries.join(", ")} }`;
     }
   }
   return String(value);

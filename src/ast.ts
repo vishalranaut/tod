@@ -72,14 +72,48 @@ export interface IndexExpr {
 
 export interface AssignExpr {
   kind: "AssignExpr";
-  name: string;
+  target: Expression;
+  value: Expression;
+  line: number;
+}
+
+export interface MemberAssignExpr {
+  kind: "MemberAssignExpr";
+  object: Expression;
+  property: string;
+  value: Expression;
+  line: number;
+}
+
+export interface MemberCompoundAssignExpr {
+  kind: "MemberCompoundAssignExpr";
+  object: Expression;
+  property: string;
+  operator: string;
+  value: Expression;
+  line: number;
+}
+
+export interface IndexAssignExpr {
+  kind: "IndexAssignExpr";
+  object: Expression;
+  index: Expression;
+  value: Expression;
+  line: number;
+}
+
+export interface IndexCompoundAssignExpr {
+  kind: "IndexCompoundAssignExpr";
+  object: Expression;
+  index: Expression;
+  operator: string;
   value: Expression;
   line: number;
 }
 
 export interface CompoundAssignExpr {
   kind: "CompoundAssignExpr";
-  name: string;
+  target: Expression;
   operator: string; // "+=", "-=", etc.
   value: Expression;
   line: number;
@@ -87,7 +121,7 @@ export interface CompoundAssignExpr {
 
 export interface UpdateExpr {
   kind: "UpdateExpr";
-  name: string;
+  target: Expression;
   operator: string; // "++", "--"
   line: number;
 }
@@ -125,6 +159,24 @@ export interface FunctionExpr {
   line: number;
 }
 
+export interface NewExpr {
+  kind: "NewExpr";
+  callee: Expression;
+  args: Expression[];
+  line: number;
+}
+
+export interface ThisExpr {
+  kind: "ThisExpr";
+  line: number;
+}
+
+export interface SuperExpr {
+  kind: "SuperExpr";
+  method: string | null; // null if it's super(...) instead of super.method(...)
+  line: number;
+}
+
 export type Expression =
   | NumberLiteral
   | StringLiteral
@@ -143,7 +195,10 @@ export type Expression =
   | ObjectLiteral
   | SpreadExpr
   | TernaryExpr
-  | FunctionExpr;
+  | FunctionExpr
+  | NewExpr
+  | ThisExpr
+  | SuperExpr;
 
 // ─── Statements ──────────────────────────────────────────────────────────────
 
@@ -209,15 +264,25 @@ export interface ExpressionStatement {
 
 export interface FunctionDeclaration {
   kind: "FunctionDeclaration";
-  name: string;
+  name: string | null;
   params: string[];
   body: Statement[];
+  isStatic?: boolean;
+  accessorType?: "get" | "set";
   line: number;
 }
 
 export interface BlockStatement {
   kind: "BlockStatement";
   statements: Statement[];
+  line: number;
+}
+
+export interface ClassDeclaration {
+  kind: "ClassDeclaration";
+  name: string;
+  superClass?: Expression;
+  methods: FunctionDeclaration[];
   line: number;
 }
 
@@ -232,7 +297,8 @@ export type Statement =
   | ContinueStatement
   | ExpressionStatement
   | FunctionDeclaration
-  | BlockStatement;
+  | BlockStatement
+  | ClassDeclaration;
 
 // ─── Program (root node) ────────────────────────────────────────────────────
 

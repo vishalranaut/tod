@@ -90,9 +90,12 @@ describe("Parser", () => {
       });
     });
 
-    it("should parse comparison operators", () => {
-      expect(parseExpr("a < b")).toMatchObject({ kind: "BinaryExpr", operator: "<" });
-      expect(parseExpr("a >= b")).toMatchObject({ kind: "BinaryExpr", operator: ">=" });
+    it("should parse comparison operators and instanceof", () => {
+      expect(parseExpr("1 < 2")).toMatchObject({ operator: "<" });
+      expect(parseExpr("1 > 2")).toMatchObject({ operator: ">" });
+      expect(parseExpr("1 <= 2")).toMatchObject({ operator: "<=" });
+      expect(parseExpr("1 >= 2")).toMatchObject({ operator: ">=" });
+      expect(parseExpr("obj instanceof Class")).toMatchObject({ operator: "instanceof" });
     });
 
     it("should parse equality operators", () => {
@@ -266,12 +269,122 @@ describe("Parser", () => {
     });
   });
 
+  describe("class declarations", () => {
+    it("should parse class declaration with methods", () => {
+      const ast = parse(`
+        class Point {
+          constructor(x, y) {
+            this.x = x;
+            this.y = y;
+          }
+          move(dx, dy) {
+            this.x += dx;
+            this.y += dy;
+          }
+        }
+      `);
+      expect(ast.body[0]).toMatchObject({
+        kind: "ClassDeclaration",
+        name: "Point",
+        methods: [
+          { kind: "FunctionDeclaration", name: "constructor", params: ["x", "y"] },
+          { kind: "FunctionDeclaration", name: "move", params: ["dx", "dy"] }
+        ]
+      });
+    });
+
+    it("should parse class with inheritance", () => {
+      const ast = parse(`
+        class Dog extends Animal {
+          speak() {
+            super.speak();
+          }
+        }
+      `);
+      expect(ast.body[0]).toMatchObject({
+        kind: "ClassDeclaration",
+        name: "Dog",
+        superClass: { kind: "Identifier", name: "Animal" },
+        methods: [
+          { kind: "FunctionDeclaration", name: "speak" }
+        ]
+      });
+    });
+
+    it("should parse static methods and getters/setters", () => {
+      const ast = parse(`
+        class MathUtils {
+          static add(a, b) {
+            return a + b;
+          }
+          get PI() {
+            return 3.14;
+          }
+          set PI(v) {
+            this.val = v;
+          }
+        }
+      `);
+      expect(ast.body[0]).toMatchObject({
+        kind: "ClassDeclaration",
+        name: "MathUtils",
+        methods: [
+          { kind: "FunctionDeclaration", name: "add", isStatic: true },
+          { kind: "FunctionDeclaration", name: "PI", accessorType: "get" },
+          { kind: "FunctionDeclaration", name: "PI", accessorType: "set" },
+        ]
+      });
+    });
+
+    it("should parse super expression", () => {
+      const expr = parseExpr("super.method()");
+      // super.method() is parsed as CallExpr(SuperExpr(method), [])
+      expect(expr).toMatchObject({
+        kind: "CallExpr",
+        callee: { kind: "SuperExpr", method: "method" }
+      });
+    });
+
+    it("should parse super constructor call", () => {
+      const expr = parseExpr("super(1, 2)");
+      expect(expr).toMatchObject({
+        kind: "CallExpr",
+        callee: { kind: "SuperExpr", method: null },
+        args: [
+          { kind: "NumberLiteral", value: 1 },
+          { kind: "NumberLiteral", value: 2 },
+        ]
+      });
+    });
+
+    it("should parse new expressions", () => {
+      const expr = parseExpr("new Point(1, 2)");
+      expect(expr).toMatchObject({
+        kind: "NewExpr",
+        callee: { kind: "Identifier", name: "Point" },
+        args: [
+          { kind: "NumberLiteral", value: 1 },
+          { kind: "NumberLiteral", value: 2 },
+        ]
+      });
+    });
+
+    it("should parse this expressions", () => {
+      const expr = parseExpr("this.x");
+      expect(expr).toMatchObject({
+        kind: "MemberExpr",
+        object: { kind: "ThisExpr" },
+        property: "x"
+      });
+    });
+  });
+
   describe("assignment", () => {
     it("should parse assignment expression", () => {
       const expr = parseExpr("x = 5");
       expect(expr).toMatchObject({
         kind: "AssignExpr",
-        name: "x",
+        target: { kind: "Identifier", name: "x" },
         value: { kind: "NumberLiteral", value: 5 },
       });
     });
@@ -280,7 +393,7 @@ describe("Parser", () => {
       const expr = parseExpr("x += 5");
       expect(expr).toMatchObject({
         kind: "CompoundAssignExpr",
-        name: "x",
+        target: { kind: "Identifier", name: "x" },
         operator: "+=",
         value: { kind: "NumberLiteral", value: 5 },
       });
@@ -290,7 +403,7 @@ describe("Parser", () => {
       const expr = parseExpr("x++");
       expect(expr).toMatchObject({
         kind: "UpdateExpr",
-        name: "x",
+        target: { kind: "Identifier", name: "x" },
         operator: "++",
       });
     });
@@ -299,7 +412,7 @@ describe("Parser", () => {
       const expr = parseExpr("y--");
       expect(expr).toMatchObject({
         kind: "UpdateExpr",
-        name: "y",
+        target: { kind: "Identifier", name: "y" },
         operator: "--",
       });
     });

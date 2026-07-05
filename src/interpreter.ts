@@ -8,6 +8,8 @@ import { Environment } from "./environment.js";
 import {
   type TodValue,
   type TodFunction,
+  type TodClass,
+  type TodInstance,
   isTruthy,
   isCallable,
   isTodObject,
@@ -85,6 +87,8 @@ export class Interpreter {
         return this.execContinue();
       case "BlockStatement":
         return this.execBlock(stmt.statements, new Environment(env));
+      case "ClassDeclaration":
+        return this.execClassDeclaration(stmt, env);
       case "ExpressionStatement":
         return this.evalExpr(stmt.expression, env);
     }
@@ -110,7 +114,64 @@ export class Interpreter {
       body: stmt.body,
       closure: env,
     };
-    env.define(stmt.name, fn);
+    if (stmt.name) {
+      env.define(stmt.name, fn);
+    }
+    return null;
+  }
+
+  private execClassDeclaration(stmt: Extract<Statement, { kind: "ClassDeclaration" }>, env: Environment): TodValue {
+    let parentClass: TodClass | undefined;
+    if (stmt.superClass) {
+      const superClassVal = this.evalExpr(stmt.superClass, env);
+      if (typeof superClassVal !== "object" || superClassVal === null || superClassVal.type !== "class") {
+        throw new RuntimeError("Superclass must be a class", stmt.superClass.line);
+      }
+      parentClass = superClassVal as TodClass;
+    }
+
+    const methodsEnv = new Environment(env);
+    
+    const methods = new Map<string, TodFunction>();
+    const staticMethods = new Map<string, TodFunction>();
+    const getters = new Map<string, TodFunction>();
+    const setters = new Map<string, TodFunction>();
+
+    for (const method of stmt.methods) {
+      const fn: TodFunction = {
+        type: "function",
+        name: method.name!,
+        params: method.params,
+        body: method.body,
+        closure: methodsEnv, // Bind to the methods environment
+      };
+
+      if (method.isStatic) {
+        staticMethods.set(method.name!, fn);
+      } else if (method.accessorType === "get") {
+        getters.set(method.name!, fn);
+      } else if (method.accessorType === "set") {
+        setters.set(method.name!, fn);
+      } else {
+        methods.set(method.name!, fn);
+      }
+    }
+
+    const todClass: TodClass = {
+      type: "class",
+      name: stmt.name,
+      parent: parentClass,
+      methods,
+      staticMethods,
+      getters,
+      setters,
+    };
+
+    if (parentClass) {
+      methodsEnv.define("super", parentClass);
+    }
+
+    env.define(stmt.name, todClass);
     return null;
   }
 
@@ -217,6 +278,112 @@ export class Interpreter {
     return result;
   }
 
+  private evalSuperExpr(expr: Extract<Expression, { kind: "SuperExpr" }>, env: Environment): TodValue {
+    let parentClass: TodClass;
+    try {
+      parentClass = env.get("super", expr.line) as TodClass;
+    } catch {
+      throw new RuntimeError("Cannot use 'super' outside of a subclass method", expr.line);
+    }
+
+    let instance: TodInstance;
+    try {
+      instance = env.get("this", expr.line) as TodInstance;
+    } catch {
+      throw new RuntimeError("Cannot use 'super' outside of a method", expr.line);
+    }
+
+    const methodName = expr.method ?? "constructor";
+    let currentClass: TodClass | undefined = parentClass;
+    let method: TodFunction | undefined;
+
+    while (currentClass) {
+      if (currentClass.methods.has(methodName)) {
+        method = currentClass.methods.get(methodName);
+        break;
+      }
+      currentClass = currentClass.parent;
+    }
+
+    if (!method) {
+      throw new RuntimeError(`Method '${methodName}' not found in superclass`, expr.line);
+    }
+
+    const boundEnv = new Environment(method.closure);
+    boundEnv.define("this", instance);
+    return {
+      type: "function",
+      name: method.name,
+      params: method.params,
+      body: method.body,
+      closure: boundEnv,
+    };
+  }
+
+  // ─── Evaluation Utilities ────────────────────────────────────────────
+
+  private evalNewExpr(expr: Extract<Expression, { kind: "NewExpr" }>, env: Environment): TodValue {
+    const callee = this.evalExpr(expr.callee, env);
+    if (typeof callee !== "object" || callee === null || callee.type !== "class") {
+      throw new RuntimeError(`${todStringify(callee)} is not a class`, expr.line);
+    }
+
+    const instance: TodInstance = {
+      type: "instance",
+      todClass: callee,
+      fields: new Map(),
+    };
+
+    // Find constructor in class hierarchy
+    let currentClass: TodClass | undefined = callee;
+    let constructorMethod: TodFunction | undefined;
+    while (currentClass) {
+      if (currentClass.methods.has("constructor")) {
+        constructorMethod = currentClass.methods.get("constructor");
+        break;
+      }
+      currentClass = currentClass.parent;
+    }
+
+    if (constructorMethod) {
+      const boundEnv = new Environment(constructorMethod.closure);
+      boundEnv.define("this", instance);
+      const boundConstructor: TodFunction = {
+        type: "function",
+        name: "constructor",
+        params: constructorMethod.params,
+        body: constructorMethod.body,
+        closure: boundEnv,
+      };
+
+      const args = expr.args.map((arg) => this.evalExpr(arg, env));
+      if (args.length !== boundConstructor.params.length) {
+        throw new RuntimeError(`Expected ${boundConstructor.params.length} arguments but got ${args.length}`, expr.line);
+      }
+
+      const execEnv = new Environment(boundConstructor.closure);
+      for (let i = 0; i < boundConstructor.params.length; i++) {
+        execEnv.define(boundConstructor.params[i], args[i]);
+      }
+
+      try {
+        this.execBlock(boundConstructor.body, execEnv);
+      } catch (e) {
+        if (e instanceof ReturnSignal) {
+          // Constructors implicitly return `this` unless they explicitly return an object (but in TOD we just always return instance for simplicity).
+          // If they returned a value, we just ignore it and return the instance anyway, or return it if it's an object. 
+          // Let's just always return the instance for simplicity, matching basic JS behavior when returning primitives.
+        } else {
+          throw e;
+        }
+      }
+    } else if (expr.args.length > 0) {
+      throw new RuntimeError(`Expected 0 arguments but got ${expr.args.length}`, expr.line);
+    }
+
+    return instance;
+  }
+
   // ─── Expression Evaluation ───────────────────────────────────────────
 
   evalExpr(expr: Expression, env: Environment): TodValue {
@@ -257,17 +424,118 @@ export class Interpreter {
         throw new RuntimeError("Spread operator cannot be used here", expr.line);
       case "FunctionExpr":
         return this.evalFunctionExpr(expr, env);
+      case "NewExpr":
+        return this.evalNewExpr(expr, env);
+      case "ThisExpr":
+        return env.get("this", expr.line);
+      case "SuperExpr":
+        return this.evalSuperExpr(expr, env);
+    }
+  }
+
+  private getTargetValue(target: Expression, env: Environment): TodValue {
+    if (target.kind === "Identifier") {
+      return env.get(target.name, target.line);
+    } else if (target.kind === "MemberExpr") {
+      const obj = this.evalExpr(target.object, env);
+      if (typeof obj !== "object" || obj === null) throw new RuntimeError(`Cannot read property '${target.property}' on ${todTypeofShort(obj)}`, target.line);
+      
+      if (obj.type === "class") {
+        return obj.staticMethods.has(target.property) ? obj.staticMethods.get(target.property)! : null;
+      }
+
+      if (obj.type === "instance") {
+        // Look up getters first
+        let currentClass: TodClass | undefined = obj.todClass;
+        while (currentClass) {
+          if (currentClass.getters.has(target.property)) {
+            const getter = currentClass.getters.get(target.property)!;
+            const boundEnv = new Environment(getter.closure);
+            boundEnv.define("this", obj);
+            try {
+              this.execBlock(getter.body, boundEnv);
+              return null; // Implicit return
+            } catch (e) {
+              if (e instanceof ReturnSignal) return e.value as TodValue;
+              throw e;
+            }
+          }
+          currentClass = currentClass.parent;
+        }
+
+        return obj.fields.has(target.property) ? obj.fields.get(target.property)! : null;
+      }
+      const props = (obj as any).properties as Map<string, TodValue>;
+      return props.has(target.property) ? props.get(target.property)! : null;
+    } else if (target.kind === "IndexExpr") {
+      const obj = this.evalExpr(target.object, env);
+      const index = this.evalExpr(target.index, env);
+      if (typeof obj === "object" && obj !== null && (obj as any).type === "array") {
+        if (typeof index !== "number") throw new RuntimeError("Array index must be a number", target.line);
+        const elements = (obj as any).elements as TodValue[];
+        if (index < 0 || index >= elements.length) throw new RuntimeError("Index out of bounds", target.line);
+        return elements[index];
+      }
+      throw new RuntimeError(`Cannot index into ${todTypeofShort(obj)}`, target.line);
+    }
+    throw new RuntimeError("Invalid assignment target", target.line);
+  }
+
+  private setTargetValue(target: Expression, value: TodValue, env: Environment): void {
+    if (target.kind === "Identifier") {
+      env.set(target.name, value, target.line);
+    } else if (target.kind === "MemberExpr") {
+      const obj = this.evalExpr(target.object, env);
+      if (typeof obj !== "object" || obj === null) throw new RuntimeError(`Cannot set property '${target.property}' on ${todTypeofShort(obj)}`, target.line);
+      if (obj.type === "instance") {
+        // Look up setters first
+        let currentClass: TodClass | undefined = obj.todClass;
+        while (currentClass) {
+          if (currentClass.setters.has(target.property)) {
+            const setter = currentClass.setters.get(target.property)!;
+            const boundEnv = new Environment(setter.closure);
+            boundEnv.define("this", obj);
+            boundEnv.define(setter.params[0]!, value);
+            try {
+              this.execBlock(setter.body, boundEnv);
+            } catch (e) {
+              if (e instanceof ReturnSignal) { /* ignore return value of setters */ }
+              else throw e;
+            }
+            return;
+          }
+          currentClass = currentClass.parent;
+        }
+
+        obj.fields.set(target.property, value);
+        return;
+      }
+      const props = (obj as any).properties as Map<string, TodValue>;
+      props.set(target.property, value);
+    } else if (target.kind === "IndexExpr") {
+      const obj = this.evalExpr(target.object, env);
+      const index = this.evalExpr(target.index, env);
+      if (typeof obj === "object" && obj !== null && (obj as any).type === "array") {
+        if (typeof index !== "number") throw new RuntimeError("Array index must be a number", target.line);
+        const elements = (obj as any).elements as TodValue[];
+        if (index < 0 || index >= elements.length) throw new RuntimeError("Index out of bounds", target.line);
+        elements[index] = value;
+        return;
+      }
+      throw new RuntimeError(`Cannot set index on ${todTypeofShort(obj)}`, target.line);
+    } else {
+      throw new RuntimeError("Invalid assignment target", target.line);
     }
   }
 
   private evalAssign(expr: Extract<Expression, { kind: "AssignExpr" }>, env: Environment): TodValue {
     const value = this.evalExpr(expr.value, env);
-    env.set(expr.name, value, expr.line);
+    this.setTargetValue(expr.target, value, env);
     return value;
   }
 
   private evalCompoundAssign(expr: Extract<Expression, { kind: "CompoundAssignExpr" }>, env: Environment): TodValue {
-    const current = env.get(expr.name, expr.line);
+    const current = this.getTargetValue(expr.target, env);
     const right = this.evalExpr(expr.value, env);
     let newValue: TodValue;
 
@@ -303,22 +571,20 @@ export class Interpreter {
         throw new RuntimeError(`Unknown operator '${expr.operator}'`, expr.line);
     }
 
-    env.set(expr.name, newValue, expr.line);
+    this.setTargetValue(expr.target, newValue, env);
     return newValue;
   }
 
   private evalUpdate(expr: Extract<Expression, { kind: "UpdateExpr" }>, env: Environment): TodValue {
-    const current = env.get(expr.name, expr.line);
+    const current = this.getTargetValue(expr.target, env);
     if (typeof current !== "number") {
       throw new RuntimeError(`Cannot use '${expr.operator}' on non-number`, expr.line);
     }
     
     // Postfix update returns the original value, then updates
     const newValue = expr.operator === "++" ? current + 1 : current - 1;
-    env.set(expr.name, newValue, expr.line);
+    this.setTargetValue(expr.target, newValue, env);
     
-    // TOD currently only has postfix ++/--, but if it's evaluated as a statement, returning newValue is fine.
-    // In JS, x++ returns the old value. Let's stick to returning old value to be accurate.
     return current;
   }
 
@@ -375,6 +641,20 @@ export class Interpreter {
         return todEquals(left, right);
       case "!=":
         return !todEquals(left, right);
+
+      case "instanceof":
+        if (typeof right !== "object" || right === null || right.type !== "class") {
+          throw new RuntimeError("Right side of 'instanceof' must be a class", expr.line);
+        }
+        if (typeof left !== "object" || left === null || left.type !== "instance") {
+          return false;
+        }
+        let currentClass: TodClass | undefined = left.todClass;
+        while (currentClass) {
+          if (currentClass === right) return true;
+          currentClass = currentClass.parent;
+        }
+        return false;
 
       default:
         throw new RuntimeError(`Unknown operator '${expr.operator}'`, expr.line);
@@ -485,23 +765,58 @@ export class Interpreter {
   }
 
   private evalMember(expr: Extract<Expression, { kind: "MemberExpr" }>, env: Environment): TodValue {
-    const object = this.evalExpr(expr.object, env);
+    const obj = this.evalExpr(expr.object, env);
+    if (obj !== null && typeof obj === "object") {
+      if (obj.type === "object") {
+        const props = obj.properties;
+        return props.has(expr.property) ? props.get(expr.property)! : null;
+      } else if (obj.type === "class") {
+        return obj.staticMethods.has(expr.property) ? obj.staticMethods.get(expr.property)! : null;
+      } else if (obj.type === "instance") {
+        // Look up getters first
+        let currentClass: TodClass | undefined = obj.todClass;
+        while (currentClass) {
+          if (currentClass.getters.has(expr.property)) {
+            const getter = currentClass.getters.get(expr.property)!;
+            const boundEnv = new Environment(getter.closure);
+            boundEnv.define("this", obj);
+            try {
+              this.execBlock(getter.body, boundEnv);
+              return null; // Implicit return
+            } catch (e) {
+              if (e instanceof ReturnSignal) return e.value as TodValue;
+              throw e;
+            }
+          }
+          currentClass = currentClass.parent;
+        }
 
-    if (isTodObject(object)) {
-      const value = object.properties.get(expr.property);
-      if (value === undefined) {
-        throw new RuntimeError(
-          `Property '${expr.property}' does not exist on object`,
-          expr.line,
-        );
+        // Look up fields on the instance
+        if (obj.fields.has(expr.property)) {
+          return obj.fields.get(expr.property)!;
+        }
+        // Look up methods on the class and its parents
+        currentClass = obj.todClass;
+        while (currentClass) {
+          if (currentClass.methods.has(expr.property)) {
+            const method = currentClass.methods.get(expr.property)!;
+            // Return a bound method
+            const boundEnv = new Environment(method.closure);
+            boundEnv.define("this", obj);
+            return {
+              type: "function",
+              name: method.name,
+              params: method.params,
+              body: method.body,
+              closure: boundEnv,
+            };
+          }
+          currentClass = currentClass.parent;
+        }
+        return null; // Property not found
       }
-      return value;
     }
-
-    throw new RuntimeError(
-      `Cannot access property '${expr.property}' on ${todTypeofShort(object)}`,
-      expr.line,
-    );
+    throw new RuntimeError(`Cannot access property '${expr.property}' on ${todTypeofShort(obj)}`, expr.line);
   }
 
   private evalIndex(expr: Extract<Expression, { kind: "IndexExpr" }>, env: Environment): TodValue {

@@ -13,6 +13,7 @@ import type {
   BreakStatement,
   ContinueStatement,
   FunctionDeclaration,
+  ClassDeclaration,
   ExpressionStatement,
   BlockStatement,
 } from "./ast.js";
@@ -58,6 +59,7 @@ export class Parser {
     if (this.check(TokenType.FOR)) return this.parseForStatement();
     if (this.check(TokenType.BREAK)) return this.parseBreakStatement();
     if (this.check(TokenType.CONTINUE)) return this.parseContinueStatement();
+    if (this.check(TokenType.CLASS)) return this.parseClassDeclaration();
     if (this.check(TokenType.LBRACE)) return this.parseBlockStatement();
 
     return this.parseExpressionStatement();
@@ -105,6 +107,63 @@ export class Parser {
       params,
       body,
       line: fnToken.line,
+    };
+  }
+
+  private parseClassDeclaration(): ClassDeclaration {
+    const classToken = this.expect(TokenType.CLASS, "Expected 'class'");
+    const nameToken = this.expect(TokenType.IDENTIFIER, "Expected class name");
+    
+    let superClass: Expression | undefined;
+    if (this.match(TokenType.EXTENDS)) {
+      // In TOD, superclass is usually an identifier, but we parse it as an expression to allow generic superclasses like in JS (e.g., class Dog extends createAnimalClass() {} )
+      superClass = this.parseExpression(); // or this.parsePrimary() if we want to restrict it
+    }
+
+    this.expect(TokenType.LBRACE, "Expected '{' before class body");
+    const methods: FunctionDeclaration[] = [];
+    
+    while (!this.check(TokenType.RBRACE) && !this.isAtEnd()) {
+      let isStatic = false;
+      let accessorType: "get" | "set" | undefined;
+
+      let methodToken = this.expect(TokenType.IDENTIFIER, "Expected method name");
+
+      if (methodToken.lexeme === "static" && this.check(TokenType.IDENTIFIER)) {
+        isStatic = true;
+        methodToken = this.expect(TokenType.IDENTIFIER, "Expected method name after 'static'");
+      }
+
+      if (methodToken.lexeme === "get" && this.check(TokenType.IDENTIFIER)) {
+        accessorType = "get";
+        methodToken = this.expect(TokenType.IDENTIFIER, "Expected getter name");
+      } else if (methodToken.lexeme === "set" && this.check(TokenType.IDENTIFIER)) {
+        accessorType = "set";
+        methodToken = this.expect(TokenType.IDENTIFIER, "Expected setter name");
+      }
+      
+      const params = this.parseParams();
+      const body = this.parseBlock();
+      
+      methods.push({
+        kind: "FunctionDeclaration",
+        name: methodToken.lexeme,
+        params,
+        body,
+        isStatic,
+        accessorType,
+        line: methodToken.line,
+      });
+    }
+    
+    this.expect(TokenType.RBRACE, "Expected '}' after class body");
+    
+    return {
+      kind: "ClassDeclaration",
+      name: nameToken.lexeme,
+      superClass,
+      methods,
+      line: classToken.line,
     };
   }
 
@@ -266,22 +325,11 @@ export class Parser {
       const op = this.previous();
       const value = this.parseAssignment(); // right-associative
 
-      if (expr.kind === "Identifier") {
+      if (expr.kind === "Identifier" || expr.kind === "MemberExpr" || expr.kind === "IndexExpr") {
         if (op.type === TokenType.ASSIGN) {
-          return {
-            kind: "AssignExpr",
-            name: expr.name,
-            value,
-            line: expr.line,
-          };
+          return { kind: "AssignExpr", target: expr, value, line: expr.line };
         } else {
-          return {
-            kind: "CompoundAssignExpr",
-            name: expr.name,
-            operator: op.lexeme,
-            value,
-            line: expr.line,
-          };
+          return { kind: "CompoundAssignExpr", target: expr, operator: op.lexeme, value, line: expr.line };
         }
       }
 
@@ -350,10 +398,10 @@ export class Parser {
   private parseComparison(): Expression {
     let left = this.parseTerm();
 
-    while (this.match(TokenType.LESS, TokenType.LESS_EQUAL, TokenType.GREATER, TokenType.GREATER_EQUAL)) {
-      const op = this.previous().lexeme;
+    while (this.match(TokenType.LESS, TokenType.GREATER, TokenType.LESS_EQUAL, TokenType.GREATER_EQUAL, TokenType.INSTANCEOF)) {
+      const op = this.previous();
       const right = this.parseTerm();
-      left = { kind: "BinaryExpr", operator: op, left, right, line: left.line };
+      left = { kind: "BinaryExpr", operator: op.lexeme, left, right, line: op.line };
     }
 
     return left;
@@ -406,6 +454,16 @@ export class Parser {
   }
 
   private parseUnary(): Expression {
+    if (this.match(TokenType.NEW)) {
+      const line = this.previous().line;
+      // We parse a call for `new Callee(args)`
+      const expr = this.parseCall();
+      if (expr.kind === "CallExpr") {
+        return { kind: "NewExpr", callee: expr.callee, args: expr.args, line };
+      }
+      throw new ParseError("Expected function call after 'new'", line, this.previous().column);
+    }
+
     if (this.match(TokenType.BANG, TokenType.MINUS)) {
       const op = this.previous().lexeme;
       const operand = this.parseUnary(); // right-recursive for right-assoc
@@ -441,8 +499,8 @@ export class Parser {
 
     if (this.match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS)) {
       const op = this.previous();
-      if (expr.kind === "Identifier") {
-        return { kind: "UpdateExpr", name: expr.name, operator: op.lexeme, line: expr.line };
+      if (expr.kind === "Identifier" || expr.kind === "MemberExpr" || expr.kind === "IndexExpr") {
+        return { kind: "UpdateExpr", target: expr, operator: op.lexeme, line: expr.line };
       }
       throw this.error(op, "Invalid update target");
     }
@@ -493,6 +551,24 @@ export class Parser {
       const params = this.parseParams();
       const body = this.parseBlock();
       return { kind: "FunctionExpr", params, body, line: token.line };
+    }
+
+    // This Expression
+    if (this.match(TokenType.THIS)) {
+      return { kind: "ThisExpr", line: token.line };
+    }
+
+    // Super Expression
+    if (this.match(TokenType.SUPER)) {
+      const line = this.previous().line;
+      if (this.match(TokenType.DOT)) {
+        const methodToken = this.expect(TokenType.IDENTIFIER, "Expected superclass method name after 'super.'");
+        return { kind: "SuperExpr", method: methodToken.lexeme, line };
+      } else if (this.check(TokenType.LPAREN)) {
+        // super()
+        return { kind: "SuperExpr", method: null, line };
+      }
+      throw new ParseError("Expected '.' or '(' after 'super'", line, this.previous().column);
     }
 
     // Object Literal

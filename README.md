@@ -117,12 +117,11 @@ for (let j = 0; j < 3; j++) {
 }
 ```
 
-### Object-Oriented Programming (Classes)
-*(Coming Soon / In Progress)*
+### Object-Oriented Programming (OOP)
 
-TOD is getting pure OOP support!
+TOD fully supports classes, inheritance, and the `instanceof` operator.
 
-```tod
+```typescript
 class Animal {
   constructor(name) {
     this.name = name;
@@ -134,13 +133,60 @@ class Animal {
 }
 
 class Dog extends Animal {
+  constructor(name, breed) {
+    super(name); // Call superclass constructor
+    this.breed = breed;
+  }
+  
   speak() {
+    super.speak(); // Call superclass method
     log(this.name + " barks.");
   }
 }
 
-let d = new Dog("Rex");
-d.speak(); // Rex barks.
+let d = new Dog("Rex", "German Shepherd");
+d.speak();
+// Output:
+// Rex makes a noise.
+// Rex barks.
+
+log(d instanceof Dog);    // true
+log(d instanceof Animal); // true
+```
+
+### Advanced OOP (`static` and Getters/Setters)
+
+TOD supports static methods and getter/setter accessors.
+
+```typescript
+class MathUtils {
+  static add(a, b) {
+    return a + b;
+  }
+}
+
+log(MathUtils.add(5, 7)); // 12
+
+class Person {
+  constructor(first, last) {
+    this.first = first;
+    this.last = last;
+  }
+  
+  get fullName() {
+    return this.first + " " + this.last;
+  }
+  
+  set fullName(name) {
+    this.first = name;
+    this.last = "";
+  }
+}
+
+let p = new Person("John", "Doe");
+log(p.fullName); // John Doe
+p.fullName = "Jane";
+log(p.first); // Jane
 ```
 
 ### Arrays and Objects

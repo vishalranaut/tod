@@ -146,12 +146,15 @@ describe("Lexer", () => {
   });
 
   describe("keywords and identifiers", () => {
-    it("should recognize all keywords", () => {
-      expect(tokenTypes("let const fn return if else while for break continue true false null")).toEqual([
-        TokenType.LET, TokenType.CONST, TokenType.FN, TokenType.RETURN,
-        TokenType.IF, TokenType.ELSE, TokenType.WHILE, TokenType.FOR,
-        TokenType.BREAK, TokenType.CONTINUE,
+    it("should tokenize keywords", () => {
+      expect(tokenTypes("let fn return if else true false null while for break continue const class this new extends super instanceof")).toEqual([
+        TokenType.LET, TokenType.FN, TokenType.RETURN,
+        TokenType.IF, TokenType.ELSE,
         TokenType.TRUE, TokenType.FALSE, TokenType.NULL,
+        TokenType.WHILE, TokenType.FOR,
+        TokenType.BREAK, TokenType.CONTINUE, TokenType.CONST,
+        TokenType.CLASS, TokenType.THIS, TokenType.NEW,
+        TokenType.EXTENDS, TokenType.SUPER, TokenType.INSTANCEOF,
         TokenType.EOF,
       ]);
     });
