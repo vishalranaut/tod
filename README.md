@@ -12,7 +12,7 @@ log(greet("world"));  // → hello world
 
 ## Features
 
-- **C/JS-like syntax** — `let`, `fn`, `if`/`else`, `while`, familiar operators
+- **C/JS-like syntax** — `let`, `const`, `fn`, `if`/`else`, `while`, `for`, `break`, `continue`
 - **Dynamic typing** — variables can hold numbers, strings, booleans, null, functions
 - **First-class functions** — closures, higher-order functions, anonymous `fn` expressions
 - **Lexical scoping** — proper scope chains with variable shadowing
@@ -72,9 +72,12 @@ tod --help              Show this help
 
 ```tod
 let x = 42;
-let name = "TOD";
+const name = "TOD";
 let active = true;
+
 x = x + 1;  // reassignment
+x += 5;     // compound assignment
+x++;        // increment
 ```
 
 ### Functions
@@ -103,19 +106,39 @@ if (x > 0) {
 
 let i = 0;
 while (i < 10) {
+  if (i == 5) { break; }
   log(i);
-  i = i + 1;
+  i++;
 }
+
+for (let j = 0; j < 3; j++) {
+  if (j == 1) { continue; }
+  log(j);
+}
+```
+
+### Arrays and Objects
+
+```tod
+let arr = [1, 2, 3];
+let obj = { a: 1, b: 2 };
+
+// Spread operator
+let combined = [...arr, 4, 5];
+let merged = { ...obj, c: 3 };
 ```
 
 ### Operators
 
 | Category     | Operators                  |
 |-------------|---------------------------|
-| Arithmetic  | `+` `-` `*` `/` `%`      |
+| Arithmetic  | `+` `-` `*` `/` `%` `**` |
+| Assignment  | `=` `+=` `-=` `*=` `/=` `%=` |
+| Update      | `++` `--`                 |
 | Comparison  | `==` `!=` `<` `>` `<=` `>=` |
 | Logical     | `&&` `\|\|` `!`          |
-| Assignment  | `=`                       |
+| Ternary     | `? :`                     |
+| Spread      | `...`                     |
 
 ### Built-in Functions
 
@@ -142,27 +165,35 @@ while (i < 10) {
 
 ```ebnf
 Program     ::= Statement*
-Statement   ::= LetStmt | FnDecl | ReturnStmt | IfStmt | WhileStmt | Block | ExprStmt
+Statement   ::= LetStmt | ConstStmt | FnDecl | ReturnStmt | IfStmt | WhileStmt | ForStmt | BreakStmt | ContinueStmt | Block | ExprStmt
 LetStmt     ::= "let" IDENT "=" Expr ";"
+ConstStmt   ::= "const" IDENT "=" Expr ";"
 FnDecl      ::= "fn" IDENT "(" Params? ")" "{" Statement* "}"
 ReturnStmt  ::= "return" Expr? ";"
 IfStmt      ::= "if" "(" Expr ")" Block ( "else" (IfStmt | Block) )?
 WhileStmt   ::= "while" "(" Expr ")" Block
+ForStmt     ::= "for" "(" (LetStmt | ConstStmt | ExprStmt | ";") Expr? ";" Expr? ")" Block
+BreakStmt   ::= "break" ";"
+ContinueStmt::= "continue" ";"
 Block       ::= "{" Statement* "}"
 ExprStmt    ::= Expr ";"
 
 Expr        ::= Assignment
-Assignment  ::= ( IDENT "=" Assignment ) | Or
+Assignment  ::= ( IDENT ( "=" | "+=" | "-=" | "*=" | "/=" | "%=" ) Assignment ) | Ternary
+Ternary     ::= Or ( "?" Expr ":" Ternary )?
 Or          ::= And ( "||" And )*
 And         ::= Equality ( "&&" Equality )*
 Equality    ::= Comparison ( ( "==" | "!=" ) Comparison )*
 Comparison  ::= Term ( ( "<" | ">" | "<=" | ">=" ) Term )*
 Term        ::= Factor ( ( "+" | "-" ) Factor )*
-Factor      ::= Unary ( ( "*" | "/" | "%" ) Unary )*
+Factor      ::= Power ( ( "*" | "/" | "%" ) Power )*
+Power       ::= Unary ( "**" Power )?
 Unary       ::= ( "!" | "-" ) Unary | Call
-Call        ::= Primary ( "(" ArgList? ")" | "." IDENT | "[" Expr "]" )*
+Call        ::= Primary ( "(" ArgList? ")" | "." IDENT | "[" Expr "]" )* ( "++" | "--" )?
 Primary     ::= NUMBER | STRING | "true" | "false" | "null"
               | IDENT | "(" Expr ")" | "fn" "(" Params? ")" Block
+              | "[" (Expr | "..." Expr) ("," (Expr | "..." Expr))* "]"
+              | "{" (IDENT ":" Expr | "..." Expr) ("," (IDENT ":" Expr | "..." Expr))* "}"
 ```
 
 ## Development
