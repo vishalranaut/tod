@@ -117,6 +117,32 @@ for (let j = 0; j < 3; j++) {
 }
 ```
 
+### Object-Oriented Programming (Classes)
+*(Coming Soon / In Progress)*
+
+TOD is getting pure OOP support!
+
+```tod
+class Animal {
+  constructor(name) {
+    this.name = name;
+  }
+  
+  speak() {
+    log(this.name + " makes a noise.");
+  }
+}
+
+class Dog extends Animal {
+  speak() {
+    log(this.name + " barks.");
+  }
+}
+
+let d = new Dog("Rex");
+d.speak(); // Rex barks.
+```
+
 ### Arrays and Objects
 
 ```tod
