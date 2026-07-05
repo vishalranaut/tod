@@ -3,7 +3,7 @@ import type {
   Statement,
   Expression,
 } from "./ast.js";
-import { RuntimeError, ReturnSignal } from "./errors.js";
+import { RuntimeError, ReturnSignal, BreakSignal, ContinueSignal } from "./errors.js";
 import { Environment } from "./environment.js";
 import {
   type TodValue,
@@ -67,6 +67,8 @@ export class Interpreter {
     switch (stmt.kind) {
       case "LetStatement":
         return this.execLet(stmt, env);
+      case "ConstStatement":
+        return this.execConst(stmt, env);
       case "FunctionDeclaration":
         return this.execFunctionDecl(stmt, env);
       case "ReturnStatement":
@@ -75,6 +77,12 @@ export class Interpreter {
         return this.execIf(stmt, env);
       case "WhileStatement":
         return this.execWhile(stmt, env);
+      case "ForStatement":
+        return this.execFor(stmt, env);
+      case "BreakStatement":
+        return this.execBreak();
+      case "ContinueStatement":
+        return this.execContinue();
       case "BlockStatement":
         return this.execBlock(stmt.statements, new Environment(env));
       case "ExpressionStatement":
@@ -85,6 +93,12 @@ export class Interpreter {
   private execLet(stmt: Extract<Statement, { kind: "LetStatement" }>, env: Environment): TodValue {
     const value = this.evalExpr(stmt.value, env);
     env.define(stmt.name, value);
+    return null;
+  }
+
+  private execConst(stmt: Extract<Statement, { kind: "ConstStatement" }>, env: Environment): TodValue {
+    const value = this.evalExpr(stmt.value, env);
+    env.define(stmt.name, value, true); // true for isConst
     return null;
   }
 
@@ -123,7 +137,17 @@ export class Interpreter {
     const MAX_ITERATIONS = 1_000_000;
 
     while (isTruthy(this.evalExpr(stmt.condition, env))) {
-      result = this.execBlock(stmt.body, new Environment(env));
+      try {
+        result = this.execBlock(stmt.body, new Environment(env));
+      } catch (e) {
+        if (e instanceof BreakSignal) break;
+        if (e instanceof ContinueSignal) {
+          // just continue to next iteration
+        } else {
+          throw e;
+        }
+      }
+      
       iterations++;
       if (iterations >= MAX_ITERATIONS) {
         throw new RuntimeError(
@@ -134,6 +158,53 @@ export class Interpreter {
     }
 
     return result;
+  }
+
+  private execFor(stmt: Extract<Statement, { kind: "ForStatement" }>, env: Environment): TodValue {
+    let result: TodValue = null;
+    let iterations = 0;
+    const MAX_ITERATIONS = 1_000_000;
+    
+    // Create scope for initialization
+    const forEnv = new Environment(env);
+    if (stmt.init) {
+      this.execStatement(stmt.init, forEnv);
+    }
+
+    while (stmt.condition ? isTruthy(this.evalExpr(stmt.condition, forEnv)) : true) {
+      try {
+        result = this.execBlock(stmt.body, new Environment(forEnv));
+      } catch (e) {
+        if (e instanceof BreakSignal) break;
+        if (e instanceof ContinueSignal) {
+          // skip body, go to update
+        } else {
+          throw e;
+        }
+      }
+      
+      if (stmt.update) {
+        this.evalExpr(stmt.update, forEnv);
+      }
+      
+      iterations++;
+      if (iterations >= MAX_ITERATIONS) {
+        throw new RuntimeError(
+          `Loop exceeded maximum iterations (${MAX_ITERATIONS}). Possible infinite loop.`,
+          stmt.line,
+        );
+      }
+    }
+
+    return result;
+  }
+
+  private execBreak(): never {
+    throw new BreakSignal();
+  }
+
+  private execContinue(): never {
+    throw new ContinueSignal();
   }
 
   execBlock(statements: Statement[], env: Environment): TodValue {
@@ -162,6 +233,10 @@ export class Interpreter {
         return env.get(expr.name, expr.line);
       case "AssignExpr":
         return this.evalAssign(expr, env);
+      case "CompoundAssignExpr":
+        return this.evalCompoundAssign(expr, env);
+      case "UpdateExpr":
+        return this.evalUpdate(expr, env);
       case "BinaryExpr":
         return this.evalBinary(expr, env);
       case "UnaryExpr":
@@ -172,6 +247,14 @@ export class Interpreter {
         return this.evalMember(expr, env);
       case "IndexExpr":
         return this.evalIndex(expr, env);
+      case "ArrayLiteral":
+        return this.evalArrayLiteral(expr, env);
+      case "ObjectLiteral":
+        return this.evalObjectLiteral(expr, env);
+      case "TernaryExpr":
+        return this.evalTernary(expr, env);
+      case "SpreadExpr":
+        throw new RuntimeError("Spread operator cannot be used here", expr.line);
       case "FunctionExpr":
         return this.evalFunctionExpr(expr, env);
     }
@@ -181,6 +264,62 @@ export class Interpreter {
     const value = this.evalExpr(expr.value, env);
     env.set(expr.name, value, expr.line);
     return value;
+  }
+
+  private evalCompoundAssign(expr: Extract<Expression, { kind: "CompoundAssignExpr" }>, env: Environment): TodValue {
+    const current = env.get(expr.name, expr.line);
+    const right = this.evalExpr(expr.value, env);
+    let newValue: TodValue;
+
+    switch (expr.operator) {
+      case "+=":
+        if (typeof current === "number" && typeof right === "number") newValue = current + right;
+        else if (typeof current === "string" || typeof right === "string") newValue = todStringify(current) + todStringify(right);
+        else throw new RuntimeError(`Cannot use '+=' on ${typeof current} and ${typeof right}`, expr.line);
+        break;
+      case "-=":
+        newValue = this.requireNumbers(current, right, "-=", expr.line, (a, b) => a - b);
+        break;
+      case "*=":
+        newValue = this.requireNumbers(current, right, "*=", expr.line, (a, b) => a * b);
+        break;
+      case "/=":
+        if (typeof current === "number" && typeof right === "number") {
+          if (right === 0) throw new RuntimeError("Division by zero", expr.line);
+          newValue = current / right;
+        } else {
+          throw new RuntimeError(`Cannot use '/=' on ${typeof current} and ${typeof right}`, expr.line);
+        }
+        break;
+      case "%=":
+        if (typeof current === "number" && typeof right === "number") {
+          if (right === 0) throw new RuntimeError("Modulo by zero", expr.line);
+          newValue = current % right;
+        } else {
+          throw new RuntimeError(`Cannot use '%=' on ${typeof current} and ${typeof right}`, expr.line);
+        }
+        break;
+      default:
+        throw new RuntimeError(`Unknown operator '${expr.operator}'`, expr.line);
+    }
+
+    env.set(expr.name, newValue, expr.line);
+    return newValue;
+  }
+
+  private evalUpdate(expr: Extract<Expression, { kind: "UpdateExpr" }>, env: Environment): TodValue {
+    const current = env.get(expr.name, expr.line);
+    if (typeof current !== "number") {
+      throw new RuntimeError(`Cannot use '${expr.operator}' on non-number`, expr.line);
+    }
+    
+    // Postfix update returns the original value, then updates
+    const newValue = expr.operator === "++" ? current + 1 : current - 1;
+    env.set(expr.name, newValue, expr.line);
+    
+    // TOD currently only has postfix ++/--, but if it's evaluated as a statement, returning newValue is fine.
+    // In JS, x++ returns the old value. Let's stick to returning old value to be accurate.
+    return current;
   }
 
   private evalBinary(expr: Extract<Expression, { kind: "BinaryExpr" }>, env: Environment): TodValue {
@@ -200,38 +339,26 @@ export class Interpreter {
     const right = this.evalExpr(expr.right, env);
 
     switch (expr.operator) {
-      // Arithmetic
       case "+":
         if (typeof left === "number" && typeof right === "number") return left + right;
-        if (typeof left === "string" || typeof right === "string") {
-          return todStringify(left) + todStringify(right);
-        }
-        throw new RuntimeError(
-          `Cannot use '+' on ${todTypeofShort(left)} and ${todTypeofShort(right)}`,
-          expr.line,
-        );
+        if (typeof left === "string" || typeof right === "string") return todStringify(left) + todStringify(right);
+        throw new RuntimeError(`Cannot add ${typeof left} and ${typeof right}`, expr.line);
       case "-":
         return this.requireNumbers(left, right, "-", expr.line, (a, b) => a - b);
       case "*":
         return this.requireNumbers(left, right, "*", expr.line, (a, b) => a * b);
-      case "/":
-        if (typeof left === "number" && typeof right === "number") {
-          if (right === 0) throw new RuntimeError("Division by zero", expr.line);
-          return left / right;
-        }
-        throw new RuntimeError(
-          `Cannot use '/' on ${todTypeofShort(left)} and ${todTypeofShort(right)}`,
-          expr.line,
-        );
-      case "%":
-        if (typeof left === "number" && typeof right === "number") {
-          if (right === 0) throw new RuntimeError("Modulo by zero", expr.line);
-          return left % right;
-        }
-        throw new RuntimeError(
-          `Cannot use '%' on ${todTypeofShort(left)} and ${todTypeofShort(right)}`,
-          expr.line,
-        );
+      case "/": {
+        const result = this.requireNumbers(left, right, "/", expr.line, (a, b) => a / b);
+        if (right === 0) throw new RuntimeError("Division by zero", expr.line);
+        return result;
+      }
+      case "%": {
+        const result = this.requireNumbers(left, right, "%", expr.line, (a, b) => a % b);
+        if (right === 0) throw new RuntimeError("Modulo by zero", expr.line);
+        return result;
+      }
+      case "**":
+        return this.requireNumbers(left, right, "**", expr.line, (a, b) => Math.pow(a, b));
 
       // Comparison
       case "<":
@@ -268,6 +395,52 @@ export class Interpreter {
       default:
         throw new RuntimeError(`Unknown unary operator '${expr.operator}'`, expr.line);
     }
+  }
+
+  private evalTernary(expr: Extract<Expression, { kind: "TernaryExpr" }>, env: Environment): TodValue {
+    const condition = this.evalExpr(expr.condition, env);
+    if (isTruthy(condition)) {
+      return this.evalExpr(expr.consequence, env);
+    } else {
+      return this.evalExpr(expr.alternative, env);
+    }
+  }
+
+  private evalArrayLiteral(expr: Extract<Expression, { kind: "ArrayLiteral" }>, env: Environment): TodValue {
+    const elements: TodValue[] = [];
+    for (const el of expr.elements) {
+      if (el.kind === "SpreadExpr") {
+        const spreadValue = this.evalExpr(el.operand, env);
+        if (typeof spreadValue === "object" && spreadValue !== null && (spreadValue as any).type === "array") {
+          elements.push(...(spreadValue as any).elements);
+        } else {
+          throw new RuntimeError("Can only spread arrays into arrays", el.line);
+        }
+      } else {
+        elements.push(this.evalExpr(el, env));
+      }
+    }
+    return { type: "array", elements };
+  }
+
+  private evalObjectLiteral(expr: Extract<Expression, { kind: "ObjectLiteral" }>, env: Environment): TodValue {
+    const properties = new Map<string, TodValue>();
+    for (const prop of expr.properties) {
+      if (prop.value.kind === "SpreadExpr") {
+        const spreadValue = this.evalExpr(prop.value.operand, env);
+        if (typeof spreadValue === "object" && spreadValue !== null && (spreadValue as any).type === "object") {
+          const innerProps = (spreadValue as any).properties as Map<string, TodValue>;
+          for (const [k, v] of innerProps.entries()) {
+            properties.set(k, v);
+          }
+        } else {
+          throw new RuntimeError("Can only spread objects into objects", prop.value.line);
+        }
+      } else {
+        properties.set(prop.key, this.evalExpr(prop.value, env));
+      }
+    }
+    return { type: "object", properties };
   }
 
   private evalCall(expr: Extract<Expression, { kind: "CallExpr" }>, env: Environment): TodValue {

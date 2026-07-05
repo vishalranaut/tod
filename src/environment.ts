@@ -8,7 +8,7 @@ import type { TodValue } from "./values.js";
  * Each environment optionally links to a parent scope (its enclosing scope).
  */
 export class Environment {
-  private readonly values = new Map<string, TodValue>();
+  private readonly values = new Map<string, { value: TodValue; isConst: boolean }>();
   private readonly parent: Environment | null;
 
   constructor(parent?: Environment) {
@@ -19,8 +19,8 @@ export class Environment {
    * Define a new variable in the current scope.
    * Shadows any variable with the same name in an outer scope.
    */
-  define(name: string, value: TodValue): void {
-    this.values.set(name, value);
+  define(name: string, value: TodValue, isConst: boolean = false): void {
+    this.values.set(name, { value, isConst });
   }
 
   /**
@@ -29,7 +29,7 @@ export class Environment {
    */
   get(name: string, line?: number): TodValue {
     if (this.values.has(name)) {
-      return this.values.get(name)!;
+      return this.values.get(name)!.value;
     }
 
     if (this.parent !== null) {
@@ -41,11 +41,15 @@ export class Environment {
 
   /**
    * Reassign an existing variable. Walks up the scope chain to find it.
-   * Throws if the variable was never declared.
+   * Throws if the variable was never declared or is constant.
    */
   set(name: string, value: TodValue, line?: number): void {
     if (this.values.has(name)) {
-      this.values.set(name, value);
+      const binding = this.values.get(name)!;
+      if (binding.isConst) {
+        throw new RuntimeError(`Cannot reassign constant variable '${name}'`, line);
+      }
+      binding.value = value;
       return;
     }
 

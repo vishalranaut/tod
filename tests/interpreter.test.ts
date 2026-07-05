@@ -47,6 +47,11 @@ describe("Interpreter", () => {
       expect(evalExpr("10 % 3")).toBe(1);
     });
 
+    it("should evaluate power", () => {
+      expect(evalExpr("2 ** 3")).toBe(8);
+      expect(evalExpr("2 ** 3 ** 2")).toBe(512); // right-associative
+    });
+
     it("should respect operator precedence", () => {
       expect(evalExpr("2 + 3 * 4")).toBe(14);
     });
@@ -60,7 +65,7 @@ describe("Interpreter", () => {
     });
 
     it("should handle double negation", () => {
-      expect(evalExpr("--5")).toBe(5);
+      expect(evalExpr("- -5")).toBe(5);
     });
 
     it("should throw on division by zero", () => {
@@ -139,15 +144,98 @@ describe("Interpreter", () => {
     });
   });
 
+  describe("ternary operators", () => {
+    it("should evaluate consequence when condition is true", () => {
+      expect(evalExpr('true ? 1 : 2')).toBe(1);
+      expect(evalExpr('1 > 0 ? "yes" : "no"')).toBe("yes");
+    });
+
+    it("should evaluate alternative when condition is false", () => {
+      expect(evalExpr('false ? 1 : 2')).toBe(2);
+      expect(evalExpr('1 < 0 ? "yes" : "no"')).toBe("no");
+    });
+
+    it("should short-circuit ternary", () => {
+      const { result } = run(`
+        let x = 0;
+        let y = 0;
+        true ? (x++) : (y++);
+        y;
+      `);
+      expect(result).toBe(0);
+    });
+  });
+
+  describe("arrays and objects", () => {
+    it("should create arrays and objects", () => {
+      const arr = evalExpr("[1, 2, 3]") as any;
+      expect(arr.type).toBe("array");
+      expect(arr.elements).toEqual([1, 2, 3]);
+
+      const obj = evalExpr("({ a: 1, b: 2 })") as any;
+      expect(obj.type).toBe("object");
+      expect(obj.properties.get("a")).toBe(1);
+      expect(obj.properties.get("b")).toBe(2);
+    });
+
+    it("should support spread in arrays", () => {
+      const { result } = run(`
+        let a = [1, 2];
+        [0, ...a, 3];
+      `);
+      const arr = result as any;
+      expect(arr.elements).toEqual([0, 1, 2, 3]);
+    });
+
+    it("should support spread in objects", () => {
+      const { result } = run(`
+        let base = { a: 1, b: 2 };
+        ({ ...base, c: 3, a: 10 });
+      `);
+      const obj = result as any;
+      expect(obj.properties.get("a")).toBe(10);
+      expect(obj.properties.get("b")).toBe(2);
+      expect(obj.properties.get("c")).toBe(3);
+    });
+  });
+
   describe("variables", () => {
     it("should declare and read variables", () => {
       const { result } = run("let x = 42; x;");
       expect(result).toBe(42);
     });
 
-    it("should reassign variables", () => {
+    it("should assign to existing variables", () => {
       const { result } = run("let x = 1; x = 2; x;");
       expect(result).toBe(2);
+    });
+
+    it("should support compound assignment (+=, -=, *=, /=, %=)", () => {
+      const { result } = run(`
+        let a = 10;
+        a += 5;
+        let b = 10;
+        b -= 3;
+        let c = 10;
+        c *= 2;
+        let d = 10;
+        d /= 2;
+        let e = 10;
+        e %= 3;
+        a + b + c + d + e;
+      `);
+      expect(result).toBe(15 + 7 + 20 + 5 + 1);
+    });
+
+    it("should support update expressions (++, --)", () => {
+      const { result } = run(`
+        let i = 0;
+        i++;
+        let j = 5;
+        j--;
+        i + j;
+      `);
+      expect(result).toBe(1 + 4);
     });
 
     it("should throw on undefined variable", () => {
@@ -156,6 +244,25 @@ describe("Interpreter", () => {
 
     it("should throw on assigning to undefined variable", () => {
       expect(() => run("x = 5;")).toThrow(RuntimeError);
+    });
+  });
+
+  describe("const statements", () => {
+    it("should declare and read const variables", () => {
+      const { result } = run("const PI = 3.14; PI;");
+      expect(result).toBe(3.14);
+    });
+
+    it("should throw on reassignment of const variable", () => {
+      expect(() => run("const MAX = 100; MAX = 200;")).toThrow(RuntimeError);
+    });
+
+    it("should throw on compound assignment of const variable", () => {
+      expect(() => run("const MAX = 100; MAX += 10;")).toThrow(RuntimeError);
+    });
+
+    it("should throw on update of const variable", () => {
+      expect(() => run("const MAX = 100; MAX++;")).toThrow(RuntimeError);
     });
   });
 
@@ -229,6 +336,52 @@ describe("Interpreter", () => {
     it("should not execute if condition is initially false", () => {
       const output = getOutput('while (false) { log("nope"); }');
       expect(output).toEqual([]);
+    });
+
+    it("should support break", () => {
+      const output = getOutput(`
+        let i = 0;
+        while (true) {
+          if (i == 3) { break; }
+          log(i);
+          i++;
+        }
+      `);
+      expect(output).toEqual(["0", "1", "2"]);
+    });
+
+    it("should support continue", () => {
+      const output = getOutput(`
+        let i = 0;
+        while (i < 5) {
+          i++;
+          if (i % 2 == 0) { continue; }
+          log(i);
+        }
+      `);
+      expect(output).toEqual(["1", "3", "5"]);
+    });
+  });
+
+  describe("for loops", () => {
+    it("should execute standard for loop", () => {
+      const output = getOutput(`
+        for (let i = 0; i < 3; i++) {
+          log(i);
+        }
+      `);
+      expect(output).toEqual(["0", "1", "2"]);
+    });
+
+    it("should support break and continue in for loop", () => {
+      const output = getOutput(`
+        for (let i = 0; i < 10; i++) {
+          if (i == 2) { continue; }
+          if (i == 5) { break; }
+          log(i);
+        }
+      `);
+      expect(output).toEqual(["0", "1", "3", "4"]);
     });
   });
 

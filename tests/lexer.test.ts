@@ -47,9 +47,27 @@ describe("Lexer", () => {
       ]);
     });
 
+    it("should tokenize compound assignment and update operators", () => {
+      expect(tokenTypes("+= -= *= /= %= ++ --")).toEqual([
+        TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN,
+        TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN,
+        TokenType.PERCENT_ASSIGN,
+        TokenType.PLUS_PLUS, TokenType.MINUS_MINUS,
+        TokenType.EOF,
+      ]);
+    });
+
     it("should tokenize logical operators", () => {
-      expect(tokenTypes("&& ||")).toEqual([
-        TokenType.AND, TokenType.OR, TokenType.EOF,
+      expect(tokenTypes("&& || ? :")).toEqual([
+        TokenType.AND, TokenType.OR,
+        TokenType.QUESTION, TokenType.COLON,
+        TokenType.EOF,
+      ]);
+    });
+
+    it("should tokenize power and spread", () => {
+      expect(tokenTypes("** ...")).toEqual([
+        TokenType.POWER, TokenType.SPREAD, TokenType.EOF,
       ]);
     });
 
@@ -129,9 +147,10 @@ describe("Lexer", () => {
 
   describe("keywords and identifiers", () => {
     it("should recognize all keywords", () => {
-      expect(tokenTypes("let fn return if else while true false null")).toEqual([
-        TokenType.LET, TokenType.FN, TokenType.RETURN,
-        TokenType.IF, TokenType.ELSE, TokenType.WHILE,
+      expect(tokenTypes("let const fn return if else while for break continue true false null")).toEqual([
+        TokenType.LET, TokenType.CONST, TokenType.FN, TokenType.RETURN,
+        TokenType.IF, TokenType.ELSE, TokenType.WHILE, TokenType.FOR,
+        TokenType.BREAK, TokenType.CONTINUE,
         TokenType.TRUE, TokenType.FALSE, TokenType.NULL,
         TokenType.EOF,
       ]);

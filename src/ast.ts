@@ -77,6 +77,47 @@ export interface AssignExpr {
   line: number;
 }
 
+export interface CompoundAssignExpr {
+  kind: "CompoundAssignExpr";
+  name: string;
+  operator: string; // "+=", "-=", etc.
+  value: Expression;
+  line: number;
+}
+
+export interface UpdateExpr {
+  kind: "UpdateExpr";
+  name: string;
+  operator: string; // "++", "--"
+  line: number;
+}
+
+export interface ArrayLiteral {
+  kind: "ArrayLiteral";
+  elements: Expression[];
+  line: number;
+}
+
+export interface ObjectLiteral {
+  kind: "ObjectLiteral";
+  properties: { key: string; value: Expression }[];
+  line: number;
+}
+
+export interface SpreadExpr {
+  kind: "SpreadExpr";
+  operand: Expression;
+  line: number;
+}
+
+export interface TernaryExpr {
+  kind: "TernaryExpr";
+  condition: Expression;
+  consequence: Expression;
+  alternative: Expression;
+  line: number;
+}
+
 export interface FunctionExpr {
   kind: "FunctionExpr";
   params: string[];
@@ -96,12 +137,25 @@ export type Expression =
   | MemberExpr
   | IndexExpr
   | AssignExpr
+  | CompoundAssignExpr
+  | UpdateExpr
+  | ArrayLiteral
+  | ObjectLiteral
+  | SpreadExpr
+  | TernaryExpr
   | FunctionExpr;
 
 // ─── Statements ──────────────────────────────────────────────────────────────
 
 export interface LetStatement {
   kind: "LetStatement";
+  name: string;
+  value: Expression;
+  line: number;
+}
+
+export interface ConstStatement {
+  kind: "ConstStatement";
   name: string;
   value: Expression;
   line: number;
@@ -128,6 +182,25 @@ export interface WhileStatement {
   line: number;
 }
 
+export interface ForStatement {
+  kind: "ForStatement";
+  init: Statement | null;
+  condition: Expression | null;
+  update: Expression | null;
+  body: Statement[];
+  line: number;
+}
+
+export interface BreakStatement {
+  kind: "BreakStatement";
+  line: number;
+}
+
+export interface ContinueStatement {
+  kind: "ContinueStatement";
+  line: number;
+}
+
 export interface ExpressionStatement {
   kind: "ExpressionStatement";
   expression: Expression;
@@ -150,9 +223,13 @@ export interface BlockStatement {
 
 export type Statement =
   | LetStatement
+  | ConstStatement
   | ReturnStatement
   | IfStatement
   | WhileStatement
+  | ForStatement
+  | BreakStatement
+  | ContinueStatement
   | ExpressionStatement
   | FunctionDeclaration
   | BlockStatement;

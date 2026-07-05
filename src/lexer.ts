@@ -53,11 +53,36 @@ export class Lexer {
       case "]": this.addToken(TokenType.RBRACKET); break;
       case ",": this.addToken(TokenType.COMMA); break;
       case ";": this.addToken(TokenType.SEMICOLON); break;
-      case ".": this.addToken(TokenType.DOT); break;
-      case "+": this.addToken(TokenType.PLUS); break;
-      case "-": this.addToken(TokenType.MINUS); break;
-      case "*": this.addToken(TokenType.STAR); break;
-      case "%": this.addToken(TokenType.PERCENT); break;
+      case "+":
+        if (this.match("=")) {
+          this.addToken(TokenType.PLUS_ASSIGN);
+        } else if (this.match("+")) {
+          this.addToken(TokenType.PLUS_PLUS);
+        } else {
+          this.addToken(TokenType.PLUS);
+        }
+        break;
+      case "-":
+        if (this.match("=")) {
+          this.addToken(TokenType.MINUS_ASSIGN);
+        } else if (this.match("-")) {
+          this.addToken(TokenType.MINUS_MINUS);
+        } else {
+          this.addToken(TokenType.MINUS);
+        }
+        break;
+      case "*":
+        if (this.match("=")) {
+          this.addToken(TokenType.STAR_ASSIGN);
+        } else if (this.match("*")) {
+          this.addToken(TokenType.POWER);
+        } else {
+          this.addToken(TokenType.STAR);
+        }
+        break;
+      case "%":
+        this.addToken(this.match("=") ? TokenType.PERCENT_ASSIGN : TokenType.PERCENT);
+        break;
 
       // Two-character tokens
       case "=":
@@ -83,7 +108,24 @@ export class Lexer {
         if (this.match("|")) {
           this.addToken(TokenType.OR);
         } else {
-          throw new LexError(`Unexpected character '|'. Did you mean '||'?`, this.line, this.startColumn);
+          throw new LexError(`Unexpected character '|'`, this.line, this.current);
+        }
+        break;
+      case "?":
+        this.addToken(TokenType.QUESTION);
+        break;
+      case ":":
+        this.addToken(TokenType.COLON);
+        break;
+      case ".":
+        if (this.match(".")) {
+          if (this.match(".")) {
+            this.addToken(TokenType.SPREAD);
+          } else {
+            throw new LexError(`Unexpected character '.'`, this.line, this.current);
+          }
+        } else {
+          this.addToken(TokenType.DOT);
         }
         break;
 
@@ -94,6 +136,8 @@ export class Lexer {
           while (!this.isAtEnd() && this.peek() !== "\n") {
             this.advance();
           }
+        } else if (this.match("=")) {
+          this.addToken(TokenType.SLASH_ASSIGN);
         } else {
           this.addToken(TokenType.SLASH);
         }

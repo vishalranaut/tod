@@ -138,8 +138,54 @@ describe("Parser", () => {
       });
     });
 
+    it("should parse power operator", () => {
+      const expr = parseExpr("2 ** 3 ** 4");
+      expect(expr).toMatchObject({
+        kind: "BinaryExpr",
+        operator: "**",
+        left: { kind: "NumberLiteral", value: 2 },
+        right: {
+          kind: "BinaryExpr",
+          operator: "**",
+          left: { kind: "NumberLiteral", value: 3 },
+          right: { kind: "NumberLiteral", value: 4 },
+        }
+      });
+    });
+
+    it("should parse ternary operator", () => {
+      const expr = parseExpr("x ? 1 : 2");
+      expect(expr).toMatchObject({
+        kind: "TernaryExpr",
+        condition: { kind: "Identifier", name: "x" },
+        consequence: { kind: "NumberLiteral", value: 1 },
+        alternative: { kind: "NumberLiteral", value: 2 },
+      });
+    });
+
+    it("should parse arrays and objects", () => {
+      const arr = parseExpr("[1, ...x, 3]");
+      expect(arr).toMatchObject({
+        kind: "ArrayLiteral",
+        elements: [
+          { kind: "NumberLiteral", value: 1 },
+          { kind: "SpreadExpr", operand: { kind: "Identifier", name: "x" } },
+          { kind: "NumberLiteral", value: 3 },
+        ],
+      });
+
+      const obj = parseExpr("({ a: 1, ...y })");
+      expect(obj).toMatchObject({
+        kind: "ObjectLiteral",
+        properties: [
+          { key: "a", value: { kind: "NumberLiteral", value: 1 } },
+          { key: "...", value: { kind: "SpreadExpr", operand: { kind: "Identifier", name: "y" } } }
+        ],
+      });
+    });
+
     it("should parse double negation", () => {
-      const expr = parseExpr("--x");
+      const expr = parseExpr("- -x");
       expect(expr).toMatchObject({
         kind: "UnaryExpr",
         operator: "-",
@@ -229,6 +275,34 @@ describe("Parser", () => {
         value: { kind: "NumberLiteral", value: 5 },
       });
     });
+
+    it("should parse compound assignment expressions", () => {
+      const expr = parseExpr("x += 5");
+      expect(expr).toMatchObject({
+        kind: "CompoundAssignExpr",
+        name: "x",
+        operator: "+=",
+        value: { kind: "NumberLiteral", value: 5 },
+      });
+    });
+
+    it("should parse update expressions (++)", () => {
+      const expr = parseExpr("x++");
+      expect(expr).toMatchObject({
+        kind: "UpdateExpr",
+        name: "x",
+        operator: "++",
+      });
+    });
+
+    it("should parse update expressions (--)", () => {
+      const expr = parseExpr("y--");
+      expect(expr).toMatchObject({
+        kind: "UpdateExpr",
+        name: "y",
+        operator: "--",
+      });
+    });
   });
 
   describe("let statements", () => {
@@ -247,6 +321,17 @@ describe("Parser", () => {
         kind: "LetStatement",
         name: "y",
         value: { kind: "BinaryExpr", operator: "+" },
+      });
+    });
+  });
+
+  describe("const statements", () => {
+    it("should parse const declaration", () => {
+      const stmt = firstStmt('const x = 42;');
+      expect(stmt).toMatchObject({
+        kind: "ConstStatement",
+        name: "x",
+        value: { kind: "NumberLiteral", value: 42 },
       });
     });
   });
@@ -340,6 +425,42 @@ describe("Parser", () => {
         condition: { kind: "BinaryExpr", operator: ">" },
         body: [{ kind: "ExpressionStatement" }],
       });
+    });
+  });
+
+  describe("for statements", () => {
+    it("should parse for loop with all parts", () => {
+      const stmt = firstStmt("for (let i = 0; i < 10; i++) { log(i); }");
+      expect(stmt).toMatchObject({
+        kind: "ForStatement",
+        init: { kind: "LetStatement", name: "i" },
+        condition: { kind: "BinaryExpr", operator: "<" },
+        update: { kind: "UpdateExpr", operator: "++" },
+        body: [{ kind: "ExpressionStatement" }],
+      });
+    });
+
+    it("should parse for loop with missing parts", () => {
+      const stmt = firstStmt("for (;;) { break; }");
+      expect(stmt).toMatchObject({
+        kind: "ForStatement",
+        init: null,
+        condition: null,
+        update: null,
+        body: [{ kind: "BreakStatement" }],
+      });
+    });
+  });
+
+  describe("control flow statements (break/continue)", () => {
+    it("should parse break", () => {
+      const stmt = firstStmt("break;");
+      expect(stmt).toMatchObject({ kind: "BreakStatement" });
+    });
+
+    it("should parse continue", () => {
+      const stmt = firstStmt("continue;");
+      expect(stmt).toMatchObject({ kind: "ContinueStatement" });
     });
   });
 

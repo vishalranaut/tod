@@ -5,9 +5,13 @@ import type {
   Statement,
   Expression,
   LetStatement,
+  ConstStatement,
   ReturnStatement,
   IfStatement,
   WhileStatement,
+  ForStatement,
+  BreakStatement,
+  ContinueStatement,
   FunctionDeclaration,
   ExpressionStatement,
   BlockStatement,
@@ -46,10 +50,14 @@ export class Parser {
 
   private parseStatement(): Statement {
     if (this.check(TokenType.LET)) return this.parseLetStatement();
+    if (this.check(TokenType.CONST)) return this.parseConstStatement();
     if (this.check(TokenType.FN) && this.peekNext().type === TokenType.IDENTIFIER) return this.parseFunctionDeclaration();
     if (this.check(TokenType.RETURN)) return this.parseReturnStatement();
     if (this.check(TokenType.IF)) return this.parseIfStatement();
     if (this.check(TokenType.WHILE)) return this.parseWhileStatement();
+    if (this.check(TokenType.FOR)) return this.parseForStatement();
+    if (this.check(TokenType.BREAK)) return this.parseBreakStatement();
+    if (this.check(TokenType.CONTINUE)) return this.parseContinueStatement();
     if (this.check(TokenType.LBRACE)) return this.parseBlockStatement();
 
     return this.parseExpressionStatement();
@@ -67,6 +75,21 @@ export class Parser {
       name: nameToken.lexeme,
       value,
       line: letToken.line,
+    };
+  }
+
+  private parseConstStatement(): ConstStatement {
+    const constToken = this.expect(TokenType.CONST, "Expected 'const'");
+    const nameToken = this.expect(TokenType.IDENTIFIER, "Expected variable name after 'const'");
+    this.expect(TokenType.ASSIGN, "Expected '=' after variable name");
+    const value = this.parseExpression();
+    this.expect(TokenType.SEMICOLON, "Expected ';' after variable declaration");
+
+    return {
+      kind: "ConstStatement",
+      name: nameToken.lexeme,
+      value,
+      line: constToken.line,
     };
   }
 
@@ -144,6 +167,57 @@ export class Parser {
     };
   }
 
+  private parseForStatement(): ForStatement {
+    const forToken = this.expect(TokenType.FOR, "Expected 'for'");
+    this.expect(TokenType.LPAREN, "Expected '(' after 'for'");
+    
+    let init: Statement | null = null;
+    if (this.check(TokenType.SEMICOLON)) {
+      this.advance();
+    } else if (this.check(TokenType.LET)) {
+      init = this.parseLetStatement();
+    } else if (this.check(TokenType.CONST)) {
+      init = this.parseConstStatement();
+    } else {
+      init = this.parseExpressionStatement();
+    }
+
+    let condition: Expression | null = null;
+    if (!this.check(TokenType.SEMICOLON)) {
+      condition = this.parseExpression();
+    }
+    this.expect(TokenType.SEMICOLON, "Expected ';' after loop condition");
+
+    let update: Expression | null = null;
+    if (!this.check(TokenType.RPAREN)) {
+      update = this.parseExpression();
+    }
+    this.expect(TokenType.RPAREN, "Expected ')' after for clauses");
+
+    const body = this.parseBlock();
+
+    return {
+      kind: "ForStatement",
+      init,
+      condition,
+      update,
+      body,
+      line: forToken.line,
+    };
+  }
+
+  private parseBreakStatement(): BreakStatement {
+    const token = this.expect(TokenType.BREAK, "Expected 'break'");
+    this.expect(TokenType.SEMICOLON, "Expected ';' after 'break'");
+    return { kind: "BreakStatement", line: token.line };
+  }
+
+  private parseContinueStatement(): ContinueStatement {
+    const token = this.expect(TokenType.CONTINUE, "Expected 'continue'");
+    this.expect(TokenType.SEMICOLON, "Expected ';' after 'continue'");
+    return { kind: "ContinueStatement", line: token.line };
+  }
+
   private parseBlockStatement(): BlockStatement {
     const braceToken = this.peek();
     const statements = this.parseBlock();
@@ -186,21 +260,52 @@ export class Parser {
   }
 
   private parseAssignment(): Expression {
-    const expr = this.parseOr();
+    const expr = this.parseTernary();
 
-    if (this.match(TokenType.ASSIGN)) {
+    if (this.match(TokenType.ASSIGN, TokenType.PLUS_ASSIGN, TokenType.MINUS_ASSIGN, TokenType.STAR_ASSIGN, TokenType.SLASH_ASSIGN, TokenType.PERCENT_ASSIGN)) {
+      const op = this.previous();
       const value = this.parseAssignment(); // right-associative
 
       if (expr.kind === "Identifier") {
-        return {
-          kind: "AssignExpr",
-          name: expr.name,
-          value,
-          line: expr.line,
-        };
+        if (op.type === TokenType.ASSIGN) {
+          return {
+            kind: "AssignExpr",
+            name: expr.name,
+            value,
+            line: expr.line,
+          };
+        } else {
+          return {
+            kind: "CompoundAssignExpr",
+            name: expr.name,
+            operator: op.lexeme,
+            value,
+            line: expr.line,
+          };
+        }
       }
 
       throw this.error(this.previous(), "Invalid assignment target");
+    }
+
+    return expr;
+  }
+
+  private parseTernary(): Expression {
+    let expr = this.parseOr();
+
+    if (this.match(TokenType.QUESTION)) {
+      const condition = expr;
+      const consequence = this.parseExpression();
+      this.expect(TokenType.COLON, "Expected ':' after ternary consequence");
+      const alternative = this.parseTernary(); // Right-associative
+      return {
+        kind: "TernaryExpr",
+        condition,
+        consequence,
+        alternative,
+        line: condition.line,
+      };
     }
 
     return expr;
@@ -267,15 +372,37 @@ export class Parser {
   }
 
   private parseFactor(): Expression {
-    let left = this.parseUnary();
+    let expr = this.parsePower();
 
     while (this.match(TokenType.STAR, TokenType.SLASH, TokenType.PERCENT)) {
-      const op = this.previous().lexeme;
-      const right = this.parseUnary();
-      left = { kind: "BinaryExpr", operator: op, left, right, line: left.line };
+      const op = this.previous();
+      const right = this.parsePower();
+      expr = {
+        kind: "BinaryExpr",
+        operator: op.lexeme,
+        left: expr,
+        right,
+        line: op.line,
+      };
     }
 
-    return left;
+    return expr;
+  }
+
+  private parsePower(): Expression {
+    let expr = this.parseUnary();
+    if (this.match(TokenType.POWER)) {
+      const op = this.previous();
+      const right = this.parsePower(); // right-associative
+      return {
+        kind: "BinaryExpr",
+        operator: op.lexeme,
+        left: expr,
+        right,
+        line: op.line,
+      };
+    }
+    return expr;
   }
 
   private parseUnary(): Expression {
@@ -310,6 +437,14 @@ export class Parser {
       } else {
         break;
       }
+    }
+
+    if (this.match(TokenType.PLUS_PLUS, TokenType.MINUS_MINUS)) {
+      const op = this.previous();
+      if (expr.kind === "Identifier") {
+        return { kind: "UpdateExpr", name: expr.name, operator: op.lexeme, line: expr.line };
+      }
+      throw this.error(op, "Invalid update target");
     }
 
     return expr;
@@ -358,6 +493,52 @@ export class Parser {
       const params = this.parseParams();
       const body = this.parseBlock();
       return { kind: "FunctionExpr", params, body, line: token.line };
+    }
+
+    // Object Literal
+    if (this.match(TokenType.LBRACE)) {
+      const line = this.previous().line;
+      const properties: { key: string; value: Expression }[] = [];
+      if (!this.check(TokenType.RBRACE)) {
+        do {
+          if (this.match(TokenType.SPREAD)) {
+            const spreadLine = this.previous().line;
+            const operand = this.parseExpression();
+            properties.push({ key: "...", value: { kind: "SpreadExpr", operand, line: spreadLine } });
+          } else {
+            const keyToken = this.match(TokenType.IDENTIFIER, TokenType.STRING) 
+              ? this.previous() 
+              : this.expect(TokenType.IDENTIFIER, "Expected property name");
+            
+            const keyStr = keyToken.type === TokenType.STRING ? (keyToken.literal as string) : keyToken.lexeme;
+            this.expect(TokenType.COLON, "Expected ':' after property name");
+            const value = this.parseExpression();
+            properties.push({ key: keyStr, value });
+          }
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RBRACE, "Expected '}' after object properties");
+      return { kind: "ObjectLiteral", properties, line };
+    }
+
+    // Array Literal
+    if (this.match(TokenType.LBRACKET)) {
+      const line = this.previous().line;
+      const elements: Expression[] = [];
+      if (!this.check(TokenType.RBRACKET)) {
+        do {
+          elements.push(this.parseExpression());
+        } while (this.match(TokenType.COMMA));
+      }
+      this.expect(TokenType.RBRACKET, "Expected ']' after array elements");
+      return { kind: "ArrayLiteral", elements, line };
+    }
+
+    // Spread Expression
+    if (this.match(TokenType.SPREAD)) {
+      const line = this.previous().line;
+      const operand = this.parseExpression();
+      return { kind: "SpreadExpr", operand, line };
     }
 
     throw this.error(token, `Unexpected token '${token.lexeme}'`);

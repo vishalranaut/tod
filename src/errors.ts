@@ -53,6 +53,26 @@ export class ReturnSignal extends Error {
   }
 }
 
+/**
+ * Control-flow signal for `break` statements.
+ */
+export class BreakSignal extends Error {
+  constructor() {
+    super("break");
+    this.name = "BreakSignal";
+  }
+}
+
+/**
+ * Control-flow signal for `continue` statements.
+ */
+export class ContinueSignal extends Error {
+  constructor() {
+    super("continue");
+    this.name = "ContinueSignal";
+  }
+}
+
 // ─── Error Formatter ─────────────────────────────────────────────────────────
 
 /**

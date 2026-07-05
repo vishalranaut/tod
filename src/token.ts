@@ -11,11 +11,15 @@ export enum TokenType {
   // Identifiers & keywords
   IDENTIFIER = "IDENTIFIER",
   LET = "LET",
+  CONST = "CONST",
   FN = "FN",
   RETURN = "RETURN",
   IF = "IF",
   ELSE = "ELSE",
   WHILE = "WHILE",
+  FOR = "FOR",
+  BREAK = "BREAK",
+  CONTINUE = "CONTINUE",
 
   // Operators
   PLUS = "PLUS",
@@ -25,6 +29,13 @@ export enum TokenType {
   PERCENT = "PERCENT",
 
   ASSIGN = "ASSIGN",
+  PLUS_ASSIGN = "PLUS_ASSIGN",
+  MINUS_ASSIGN = "MINUS_ASSIGN",
+  STAR_ASSIGN = "STAR_ASSIGN",
+  SLASH_ASSIGN = "SLASH_ASSIGN",
+  PERCENT_ASSIGN = "PERCENT_ASSIGN",
+  PLUS_PLUS = "PLUS_PLUS",
+  MINUS_MINUS = "MINUS_MINUS",
   EQUAL = "EQUAL",
   NOT_EQUAL = "NOT_EQUAL",
 
@@ -33,9 +44,13 @@ export enum TokenType {
   GREATER = "GREATER",
   GREATER_EQUAL = "GREATER_EQUAL",
 
-  BANG = "BANG",
   AND = "AND",
   OR = "OR",
+  BANG = "BANG",
+  QUESTION = "QUESTION",
+  COLON = "COLON",
+  POWER = "POWER",
+  SPREAD = "SPREAD",
 
   // Delimiters
   LPAREN = "LPAREN",
@@ -66,11 +81,15 @@ export interface Token {
 
 export const KEYWORDS: ReadonlyMap<string, TokenType> = new Map([
   ["let", TokenType.LET],
+  ["const", TokenType.CONST],
   ["fn", TokenType.FN],
   ["return", TokenType.RETURN],
   ["if", TokenType.IF],
   ["else", TokenType.ELSE],
   ["while", TokenType.WHILE],
+  ["for", TokenType.FOR],
+  ["break", TokenType.BREAK],
+  ["continue", TokenType.CONTINUE],
   ["true", TokenType.TRUE],
   ["false", TokenType.FALSE],
   ["null", TokenType.NULL],
